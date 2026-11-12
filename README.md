@@ -7,6 +7,10 @@ proposal for a human investigator, not a decision.
 This is a private demo project with synthetic data, not a production product. This page shows
 what it does; the source code is not public.
 
+**Two claims, two fractures of the same arm. Which claim does the medical report belong to?** Watch
+how the Copilot flags a likely mismatch, shows the investigator the evidence, and says when it cannot
+tell.
+
 **Demo video (104 s, English captions)**
 
 https://github.com/user-attachments/assets/27913b0a-1303-429e-bcc1-47320f8e6116
@@ -26,6 +30,16 @@ tables.
 The Copilot investigates one incident on request. It reads the relevant records and compares the
 document with the customer's claims. The report links its findings to evidence collected during that
 investigation. It is just as willing to say that the data is right, or that it cannot tell.
+
+## Human-in-the-loop (HITL)
+
+The Copilot flags a possible document misassignment. The claims investigator decides whether any
+action is warranted.
+
+To check the finding, the investigator can read the medical report and see both claims side by
+side, including which claim the document is currently linked to. The application retrieves that
+comparison through the MCP server using its own Db2 queries, independently of the SQL written by the
+model. The Copilot never reassigns a document or changes a claim.
 
 ## How it looks
 
@@ -47,14 +61,16 @@ model. Every value links to the evidence it came from.
 
 ## For technical readers: the evidence
 
-Every MCP answer is kept exactly as received: the tool, the query, the MCP server's correlation ID,
-a SHA256 of the raw answer and the rows. This one is a query the model wrote itself; the Copilot
+**Evidence traceability.** From a cited query result, the investigator can inspect the SQL and the
+rows returned by Db2. Every MCP answer is kept exactly as received: the tool, the query, the MCP
+server's correlation ID, a SHA256 of the raw answer and the rows. This one is a query the model wrote itself; the Copilot
 checked it before it went to the MCP server, and the MCP server checked it again.
 
 ![Evidence page of a query the model wrote, with its SQL, SHA256 and rows](assets/screenshots/4-evidence.png)
 
-The report is accepted only if every citation points to evidence collected in the same run.
-Otherwise it is shown as partial, never as a finished result.
+The report is accepted only if every citation points to evidence collected in the same run;
+otherwise it is shown as partial, never as a finished result. A valid citation shows where a
+statement comes from, not that its interpretation is right.
 
 ## Same complaint, three different truths
 
@@ -76,12 +92,34 @@ acceptance, not a measured accuracy.
 
 ![Components: investigator, Copilot, Claude model, read-only MCP server, Db2 and init scripts](assets/architecture.svg)
 
-- The Copilot's only path to Db2 is the read-only
+- **Read-only AI access.** The Copilot's only path to Db2 is the read-only
   [Db2 MCP server](https://github.com/marekpompura-ai-labs/db2-mcp-server), a separate public project.
-  The build fails if a direct Db2 driver is added to the Copilot.
+  The Copilot checks the SQL the model writes, the MCP server applies its own SQL policy, and its Db2
+  account has read-only access to the demo tables. The build fails if a direct Db2 driver is added
+  to the Copilot.
 - Every run has fixed budgets (MCP calls, model calls, time) and can be cancelled.
 - Text from Db2 is marked as untrusted data for the model, and the UI shows it as data only.
 - Release 1 writes nothing: Db2 is filled by init scripts, and results are kept in memory only.
+
+## Architecture decisions implemented in Release 1
+
+- ADR-001 — The Copilot reads Db2 only through the MCP server; the build rejects a direct Db2 driver
+  dependency.
+- ADR-002 — Demo incidents and documents are seeded in Db2; investigation results stay in memory.
+- ADR-003 — The database operator prepares the demo data; the MCP server uses a separate account to
+  read it.
+- ADR-004 — The Copilot starts the released MCP server as a separate process and communicates with
+  it over stdio.
+- ADR-005 — The application controls the model's tool calls and checks its SQL before forwarding it
+  to the MCP server.
+- ADR-006 — A report can complete only if every citation resolves to evidence from the same
+  investigation.
+- ADR-007 — The application retrieves the claim comparison independently of the model's queries so
+  the investigator can check its conclusion.
+- ADR-008 — Only one investigation runs at a time, with enforced call limits, time limits and
+  cancellation.
+- ADR-009 — The Copilot treats Db2 content as untrusted input; application code enforces tool
+  permissions and run limits.
 
 ## Status
 
